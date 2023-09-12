@@ -1,0 +1,92 @@
+{
+    "steps": [
+        {
+            "actionId": "com.datadoghq.http.request",
+            "connectionLabel": "INTEGRATION_NONE_1",
+            "name": "Get_all_dashboard_lists",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "FilterListsZeroCount"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "verb",
+                    "value": "GET"
+                },
+                {
+                    "name": "url",
+                    "value": "https://api.datadoghq.com/api/v1/dashboard/lists/manual"
+                },
+                {
+                    "name": "body",
+                    "value": ""
+                },
+                {
+                    "name": "responseParsing",
+                    "value": "json"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.datatransformation.expression",
+            "name": "FilterListsZeroCount",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Delete_a_dashboard_list"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "script",
+                    "value": "$.Steps.Get_all_dashboard_lists.body.dashboard_lists.filter(item => item.dashboard_count === 0)"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.http.request",
+            "connectionLabel": "INTEGRATION_NONE_1",
+            "iterator": {
+                "forEach": {
+                    "inputList": "{{ Steps.FilterListsZeroCount.data }}"
+                }
+            },
+            "name": "Delete_a_dashboard_list",
+            "parameters": [
+                {
+                    "name": "verb",
+                    "value": "DELETE"
+                },
+                {
+                    "name": "url",
+                    "value": "https://api.datadoghq.com/api/v1/dashboard/lists/manual/{{ Current.Value.id }}"
+                },
+                {
+                    "name": "requestHeaders",
+                    "value": [
+                        {
+                            "key": "Content-Type",
+                            "value": [
+                                "application/json"
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "startStepName": "Get_all_dashboard_lists",
+    "connectionEnvs": [
+        {
+            "connections": [
+                {
+                    "connectionId": "<REPLACE WITH YOUR CONNECTION ID>",
+                    "label": "INTEGRATION_NONE_1"
+                }
+            ],
+            "env": "default"
+        }
+    ]
+}
