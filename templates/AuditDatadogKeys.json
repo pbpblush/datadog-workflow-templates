@@ -1,0 +1,168 @@
+{
+    "steps": [
+        {
+            "actionId": "com.datadoghq.http.request",
+            "connectionLabel": "INTEGRATION_NONE_1",
+            "name": "Get_all_datadog_api_keys",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Get_all_datadog_application_keys"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "verb",
+                    "value": "GET"
+                },
+                {
+                    "name": "url",
+                    "value": "https://api.datadoghq.com/api/v2/api_keys"
+                },
+                {
+                    "name": "body",
+                    "value": ""
+                },
+                {
+                    "name": "requestHeaders",
+                    "value": [
+                        {
+                            "key": "Content-Type",
+                            "value": [
+                                "application/json"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "name": "urlParams",
+                    "value": [
+                        {
+                            "key": "page_size",
+                            "value": "100"
+                        },
+                        {
+                            "key": "page_number",
+                            "value": "0"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.http.request",
+            "connectionLabel": "INTEGRATION_NONE_1",
+            "name": "Get_all_datadog_application_keys",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Get_keys_older_than_90_days"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "url",
+                    "value": "https://api.datadoghq.com/api/v2/application_keys"
+                },
+                {
+                    "name": "verb",
+                    "value": "GET"
+                },
+                {
+                    "name": "requestHeaders",
+                    "value": [
+                        {
+                            "key": "Content-Type",
+                            "value": [
+                                "application/json"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "name": "urlParams",
+                    "value": [
+                        {
+                            "key": "page_size",
+                            "value": "100"
+                        },
+                        {
+                            "key": "page_number",
+                            "value": ""
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.datatransformation.func",
+            "name": "Get_keys_older_than_90_days",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Send_message"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "script",
+                    "value": "const today = new Date(); // Get the current date\nconst ninetyDaysAgo = new Date(today);\nninetyDaysAgo.setDate(today.getDate() - 90); // Calculate the date 90 days ago\n\nconst apiKeys = $.Steps.Get_all_datadog_api_keys.body.data;\nconst appKeys = $.Steps.Get_all_datadog_application_keys.body.data;\n\nconst filteredApiKeys = apiKeys.filter(item => {\n  const createdAtDate = new Date(item.attributes.created_at);\n  return createdAtDate < ninetyDaysAgo;\n});\n\nconst filteredAppKeys = appKeys.filter(item => {\n  const createdAtDate = new Date(item.attributes.created_at);\n  return createdAtDate < ninetyDaysAgo;\n});\n\nconst formatDate = date => {\n  const year = date.getFullYear();\n  const month = String(date.getMonth() + 1).padStart(2, '0'); // Month is zero-based\n  const day = String(date.getDate()).padStart(2, '0');\n  return `${year}-${month}-${day}`;\n};\n\nlet apiKeysWarnMessage = \"\";\nif (filteredApiKeys.length > 0) {\n  apiKeysWarnMessage = \"These API Keys are breaking policy and should be rotated:\\n\";\n  filteredApiKeys.forEach(item => {\n    const formattedDate = formatDate(new Date(item.attributes.created_at));\n    apiKeysWarnMessage += '- `' + item.attributes.name + '` Created: ' + formattedDate + '\\n';\n  });\n} else {\n  apiKeysWarnMessage = \"No API Keys found that are breaking policy.\";\n}\n\nlet appKeysWarnMessage = \"\";\nif (filteredAppKeys.length > 0) {\n  appKeysWarnMessage = \"The following Application Keys are breaking policy and should be removed:\\n\";\n  filteredAppKeys.forEach(item => {\n    const formattedDate = formatDate(new Date(item.attributes.created_at));\n    appKeysWarnMessage += '- `' + item.attributes.name + '` Created: ' + formattedDate + '\\n';\n  });\n} else {\n  appKeysWarnMessage = \"No Application Keys found that are breaking policy.\";\n}\n\nreturn {\n  \"api_keys\": {\n    \"items\": filteredApiKeys,\n    \"message\": apiKeysWarnMessage\n  },\n  \"app_keys\": {\n    \"items\": filteredAppKeys,\n    \"message\": appKeysWarnMessage\n  }\n};"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.slack.send_simple_message",
+            "name": "Send_message",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Send_message_1"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "teamId",
+                    "value": "<PASTE YOUR TEAM ID HERE>"
+                },
+                {
+                    "name": "channel",
+                    "value": "#foo-bar-monitoring-channel"
+                },
+                {
+                    "name": "text",
+                    "value": "{{ Steps.Get_keys_older_than_90_days.data.api_keys.message }}"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.slack.send_simple_message",
+            "name": "Send_message_1",
+            "parameters": [
+                {
+                    "name": "teamId",
+                    "value": "<PASTE YOUR TEAM ID HERE>"
+                },
+                {
+                    "name": "channel",
+                    "value": "#foo-bar-monitoring-channel"
+                },
+                {
+                    "name": "text",
+                    "value": "{{ Steps.Get_keys_older_than_90_days.data.app_keys.message }}"
+                }
+            ]
+        }
+    ],
+    "startStepName": "Get_all_datadog_api_keys",
+    "connectionEnvs": [
+        {
+            "connections": [
+                {
+                    "connectionId": "<PASTE YOUR DATADOG CONNECTION ID HERE>",
+                    "label": "INTEGRATION_NONE_1"
+                }
+            ],
+            "env": "default"
+        }
+    ]
+}
