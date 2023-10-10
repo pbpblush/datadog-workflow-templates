@@ -1,0 +1,83 @@
+{
+    "steps": [
+        {
+            "actionId": "com.datadoghq.datatransformation.func",
+            "name": "INIT",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Make_request"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "script",
+                    "value": "const multiString = $.Trigger.emailAddresses\nconst emailPattern = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/g;\nconst emailAddresses = multiString.match(emailPattern);\nconst alerts = emailAddresses.map((email) => {\n  return {\n    description: `Onboarding 101 ${email}`,\n    alias: `Onboarding 101 ${email}`,\n    message: `Onboarding 101 ${email}`,\n    priority: \"P5\",\n    tags: [\"service:onboarding_101\"],\n    responders: [\n      {\n        username: email,\n        type: \"user\"\n      }\n    ]\n  };\n});\nreturn {\n  alerts: alerts\n}"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.http.request",
+            "connectionLabel": "INTEGRATION_NONE",
+            "iterator": {
+                "forEach": {
+                    "inputList": "{{ Steps.INIT.data.alerts }}"
+                }
+            },
+            "name": "Make_request",
+            "parameters": [
+                {
+                    "name": "verb",
+                    "value": "POST"
+                },
+                {
+                    "name": "url",
+                    "value": "https://api.opsgenie.com/v2/alerts"
+                },
+                {
+                    "name": "requestHeaders",
+                    "value": [
+                        {
+                            "key": "Content-Type",
+                            "value": [
+                                "application/json"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "name": "body",
+                    "value": {
+                        "description": "{{ Current.Value.description }}",
+                        "message": "{{ Current.Value.message }}",
+                        "priority": "{{ Current.Value.priority }}",
+                        "responders": "{{ Current.Value.responders }}",
+                        "tags": "{{ Current.Value.tags }}"
+                    }
+                }
+            ]
+        }
+    ],
+    "startStepName": "INIT",
+    "connectionEnvs": [
+        {
+            "connections": [
+                {
+                    "connectionId": "<YOUR OPSGENIE CONNECTION ID USING A GLOBAL API KEY>",
+                    "label": "INTEGRATION_NONE"
+                }
+            ],
+            "env": "default"
+        }
+    ],
+    "inputSchema": {
+        "parameters": [
+            {
+                "description": "Paste text containing one or more email addresses. They will be parsed out and used.",
+                "label": "Emailaddresses",
+                "name": "emailAddresses",
+                "type": "STRING"
+            }
+        ]
+    }
+}
