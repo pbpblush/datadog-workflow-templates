@@ -1,0 +1,558 @@
+{
+    "steps": [
+        {
+            "actionId": "com.datadoghq.dd.dashboard.listDashboards",
+            "display": {
+                "bounds": {
+                    "y": 186
+                }
+            },
+            "name": "List_dashboards",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "getAllDashboardLists"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.datatransformation.func",
+            "display": {
+                "bounds": {
+                    "y": 726
+                }
+            },
+            "name": "Group_dashboards",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Branch_workflow_from_condition"
+                },
+                {
+                    "branchName": "main",
+                    "nextStepName": "Branch_workflow_from_condition_1"
+                },
+                {
+                    "branchName": "main",
+                    "nextStepName": "Branch_workflow_from_condition_2"
+                },
+                {
+                    "branchName": "main",
+                    "nextStepName": "Branch_workflow_from_condition_4"
+                },
+                {
+                    "branchName": "main",
+                    "nextStepName": "Branch_workflow_from_condition_5"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "script",
+                    "value": "const dashboards = $.Steps.List_dashboards.dashboards || [];\n\n// Group dashboards into lists of 100 or less items\nconst groupedDashboards = _.chunk(dashboards, 50);\n\n// Return the grouped dashboards\nreturn groupedDashboards;"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.dd.dashboard.getDashboard",
+            "display": {
+                "bounds": {
+                    "x": -880,
+                    "y": 1098
+                }
+            },
+            "iterator": {
+                "forEach": {
+                    "inputList": "{{ Steps.Group_dashboards.data.[0] }}"
+                }
+            },
+            "name": "Fetch_dashboard_details",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Function"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "dashboard_id",
+                    "value": "{{ Current.Value.id }}"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.core.if",
+            "display": {
+                "bounds": {
+                    "x": -704,
+                    "y": 912
+                }
+            },
+            "name": "Branch_workflow_from_condition",
+            "outboundEdges": [
+                {
+                    "branchName": "true",
+                    "nextStepName": "Fetch_dashboard_details"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "joinOperator",
+                    "value": "and"
+                },
+                {
+                    "name": "conditions",
+                    "value": [
+                        {
+                            "comparisonOperator": "notempty",
+                            "value": "{{ Steps.Group_dashboards.data.[0] }}"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.datatransformation.func",
+            "display": {
+                "bounds": {
+                    "x": 27.00004069010174,
+                    "y": 1355.0000050862632
+                }
+            },
+            "name": "Function",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Update_dashboard_list_items"
+                },
+                {
+                    "branchName": "main",
+                    "nextStepName": "Branch_workflow_from_condition_3"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "script",
+                    "value": "// Extract dashboard details and combine all three arrays\nconst dashboardDetails = ($.Steps.Fetch_dashboard_details || [])\n  .concat($.Steps.Fetch_dashboard_details_1 || [])\n  .concat($.Steps.Fetch_dashboard_details_2 || [])\n  .concat($.Steps.Fetch_dashboard_details_3 || [])\n  .concat($.Steps.Fetch_dashboard_details_4 || []);\n\n// Initialize a dictionary to hold team tags and associated dashboard IDs\nconst teamTagsDict = {};\nconst dashboardIds = [];\n\n// Iterate through each dashboard detail\ndashboardDetails.forEach(dashboard => {\n  // Retrieve the tags and dashboard ID\n  const tags = dashboard.tags || [];\n  const dashboardId = dashboard.id;\n\n  // Iterate through each tag\n  tags.forEach(tag => {\n    // Check if the tag starts with \"team:\"\n    if (tag.startsWith(\"team:\")) {\n      // Extract the team name from the tag\n      const teamName = tag.substring(5);\n\n      // Initialize the team entry if it doesn't exist\n      if (!teamTagsDict[teamName]) {\n        teamTagsDict[teamName] = [];\n      }\n\n      // Add the dashboard ID to the team's list\n      teamTagsDict[teamName].push(dashboardId);\n      dashboardIds.push(dashboardId);\n    }\n  });\n});\n\n// Convert the dictionary to a list of tuples\nconst teamTagsList = Object.entries(teamTagsDict);\n\n// Extract the unique list of team names\nconst teamNames = Object.keys(teamTagsDict);\n\n// Extract the names from dashboardlistNameToId\nconst dashboardlistNameToId = $.Steps.dashboardlistNameToId.data || {};\nconst dashboardlistNames = Object.keys(dashboardlistNameToId);\n\n// Create a shortlist of team names not mentioned in dashboardlistNameToId\nconst shortList = teamNames.filter(teamName => !dashboardlistNames.includes(teamName));\n\n// Create a list of tuples using the dashboardlist IDs paired with the dashboard IDs the team name has\nconst dashboardlistIdToDashboardIds = teamTagsList\n  .filter(([teamName]) => dashboardlistNames.includes(teamName))\n  .map(([teamName, dashboardIds]) => [\n    dashboardlistNameToId[teamName], \n    dashboardIds.map(\n      id => ({ id: id, type: 'custom_timeboard' })\n      )\n  ]);\n\nreturn {\n  dashboardIds: dashboardIds,\n  teamTagsList: teamTagsList,\n  teamNames: teamNames,\n  dashboardListsToCreate: shortList,\n  dashboardlistIdToDashboardIds: dashboardlistIdToDashboardIds\n};"
+                }
+            ],
+            "readinessGate": {
+                "threshold": 5,
+                "thresholdType": "COUNT"
+            }
+        },
+        {
+            "actionId": "com.datadoghq.dd.dashboard.getDashboard",
+            "display": {
+                "bounds": {
+                    "x": -176,
+                    "y": 1098
+                }
+            },
+            "iterator": {
+                "forEach": {
+                    "inputList": "{{ Steps.Group_dashboards.data.[1] }}"
+                }
+            },
+            "name": "Fetch_dashboard_details_1",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Function"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "dashboard_id",
+                    "value": "{{ Current.Value.id }}"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.core.if",
+            "display": {
+                "bounds": {
+                    "y": 912
+                }
+            },
+            "name": "Branch_workflow_from_condition_1",
+            "outboundEdges": [
+                {
+                    "branchName": "true",
+                    "nextStepName": "Fetch_dashboard_details_1"
+                },
+                {
+                    "branchName": "false",
+                    "nextStepName": "Function"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "joinOperator",
+                    "value": "and"
+                },
+                {
+                    "name": "conditions",
+                    "value": [
+                        {
+                            "comparisonOperator": "notempty",
+                            "value": "{{ Steps.Group_dashboards.data.[1] }}"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.core.if",
+            "display": {
+                "bounds": {
+                    "x": 352,
+                    "y": 912
+                }
+            },
+            "name": "Branch_workflow_from_condition_2",
+            "outboundEdges": [
+                {
+                    "branchName": "true",
+                    "nextStepName": "Fetch_dashboard_details_2"
+                },
+                {
+                    "branchName": "false",
+                    "nextStepName": "Function"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "joinOperator",
+                    "value": "and"
+                },
+                {
+                    "name": "conditions",
+                    "value": [
+                        {
+                            "comparisonOperator": "notempty",
+                            "value": "{{ Steps.Group_dashboards.data.[2] }}"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.dd.dashboard.getDashboard",
+            "display": {
+                "bounds": {
+                    "x": 528,
+                    "y": 1098
+                }
+            },
+            "iterator": {
+                "forEach": {
+                    "inputList": "{{ Steps.Group_dashboards.data.[2] }}"
+                }
+            },
+            "name": "Fetch_dashboard_details_2",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Function"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "dashboard_id",
+                    "value": "{{ Current.Value.id }}"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.http.request",
+            "connectionLabel": "INTEGRATION_NONE",
+            "display": {
+                "bounds": {
+                    "y": 332
+                }
+            },
+            "name": "getAllDashboardLists",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "dashboardlistNameToId"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "url",
+                    "value": "https://api.datadoghq.com/api/v1/dashboard/lists/manual"
+                },
+                {
+                    "name": "verb",
+                    "value": "GET"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.datatransformation.func",
+            "display": {
+                "bounds": {
+                    "y": 540
+                }
+            },
+            "name": "dashboardlistNameToId",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Group_dashboards"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "script",
+                    "value": "const dashboardLists = $.Steps.getAllDashboardLists.body.dashboard_lists;\n\nif (!dashboardLists) {\n  throw new Error(\"No dashboard lists found.\");\n}\n\nconst nameToIdMap = dashboardLists.reduce((acc, list) => {\n  if (list.name && list.id) {\n    acc[list.name] = list.id;\n  }\n  return acc;\n}, {});\n\nreturn nameToIdMap;"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.http.request",
+            "connectionLabel": "INTEGRATION_NONE",
+            "display": {
+                "bounds": {
+                    "x": -234.97916666666936,
+                    "y": 1710.000015258789
+                }
+            },
+            "iterator": {
+                "continueOnError": true,
+                "forEach": {
+                    "inputList": "{{ Steps.Function.data.dashboardListsToCreate }}"
+                }
+            },
+            "name": "Make_request",
+            "parameters": [
+                {
+                    "name": "verb",
+                    "value": "POST"
+                },
+                {
+                    "name": "url",
+                    "value": "https://api.datadoghq.com/api/v1/dashboard/lists/manual"
+                },
+                {
+                    "name": "requestHeaders",
+                    "value": [
+                        {
+                            "key": "Content-Type",
+                            "value": [
+                                "application/json"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "name": "body",
+                    "value": {
+                        "name": "{{ Current.Value }}"
+                    }
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.dd.dashboard_list.updateDashboardListItems",
+            "display": {
+                "bounds": {
+                    "x": 201.01042683919002,
+                    "y": 1512.000015258789
+                }
+            },
+            "iterator": {
+                "continueOnError": true,
+                "forEach": {
+                    "inputList": "{{ Steps.Function.data.dashboardlistIdToDashboardIds }}"
+                }
+            },
+            "name": "Update_dashboard_list_items",
+            "parameters": [
+                {
+                    "name": "dashboard_list_id",
+                    "value": "{{ Current.Value.[0] }}"
+                },
+                {
+                    "name": "dashboards",
+                    "value": "{{ Current.Value.[1] }}"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.core.if",
+            "display": {
+                "bounds": {
+                    "x": -242.97916666666936,
+                    "y": 1516.000015258789
+                }
+            },
+            "name": "Branch_workflow_from_condition_3",
+            "outboundEdges": [
+                {
+                    "branchName": "true",
+                    "nextStepName": "Make_request"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "joinOperator",
+                    "value": "and"
+                },
+                {
+                    "name": "conditions",
+                    "value": [
+                        {
+                            "comparisonOperator": "notempty",
+                            "value": "{{ Steps.Function.data.dashboardListsToCreate }}"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.dd.dashboard.getDashboard",
+            "display": {
+                "bounds": {
+                    "x": 957.0000203450513,
+                    "y": 1095.00001525879
+                }
+            },
+            "iterator": {
+                "forEach": {
+                    "inputList": "{{ Steps.Group_dashboards.data.[3] }}"
+                }
+            },
+            "name": "Fetch_dashboard_details_3",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Function"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "dashboard_id",
+                    "value": "{{ Current.Value.id }}"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.core.if",
+            "display": {
+                "bounds": {
+                    "x": 781.0000203450513,
+                    "y": 909.0000000000008
+                }
+            },
+            "name": "Branch_workflow_from_condition_4",
+            "outboundEdges": [
+                {
+                    "branchName": "true",
+                    "nextStepName": "Fetch_dashboard_details_3"
+                },
+                {
+                    "branchName": "false",
+                    "nextStepName": "Function"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "joinOperator",
+                    "value": "and"
+                },
+                {
+                    "name": "conditions",
+                    "value": [
+                        {
+                            "comparisonOperator": "notempty",
+                            "value": "{{ Steps.Group_dashboards.data.[3] }}"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.dd.dashboard.getDashboard",
+            "display": {
+                "bounds": {
+                    "x": 1367.999999999999,
+                    "y": 1086.458348592123
+                }
+            },
+            "iterator": {
+                "forEach": {
+                    "inputList": "{{ Steps.Group_dashboards.data.[4] }}"
+                }
+            },
+            "name": "Fetch_dashboard_details_4",
+            "outboundEdges": [
+                {
+                    "branchName": "main",
+                    "nextStepName": "Function"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "dashboard_id",
+                    "value": "{{ Current.Value.id }}"
+                }
+            ]
+        },
+        {
+            "actionId": "com.datadoghq.core.if",
+            "display": {
+                "bounds": {
+                    "x": 1191.999999999999,
+                    "y": 900.4583485921231
+                }
+            },
+            "name": "Branch_workflow_from_condition_5",
+            "outboundEdges": [
+                {
+                    "branchName": "true",
+                    "nextStepName": "Fetch_dashboard_details_4"
+                },
+                {
+                    "branchName": "false",
+                    "nextStepName": "Function"
+                }
+            ],
+            "parameters": [
+                {
+                    "name": "joinOperator",
+                    "value": "and"
+                },
+                {
+                    "name": "conditions",
+                    "value": [
+                        {
+                            "comparisonOperator": "notempty",
+                            "value": "{{ Steps.Group_dashboards.data.[4] }}"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "connectionEnvs": [
+        {
+            "connections": [
+                {
+                    "connectionId": "<PASTE YOUR DATADOG CONNECTION ID HERE>",
+                    "label": "INTEGRATION_NONE"
+                }
+            ],
+            "env": "default"
+        }
+    ],
+    "triggers": [
+        {
+            "startStepNames": [
+                "List_dashboards"
+            ],
+            "workflowTrigger": {}
+        }
+    ]
+}
